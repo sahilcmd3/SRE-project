@@ -1,0 +1,215 @@
+import json
+import os
+
+dashboard = {
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "datasource", "uid": "grafana"}, "enable": True, "hide": True, "iconColor": "rgba(0, 211, 255, 1)", "name": "Annotations & Alerts", "type": "dashboard"}]},
+  "editable": True,
+  "graphTooltip": 1,
+  "links": [],
+  "liveNow": True,
+  "panels": [
+    # ═══════ ROW 1: Overview Stats ═══════
+    {"title": "Overview", "type": "row", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "collapsed": False, "panels": []},
+    {
+      "title": "Request Rate (req/s)", "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
+      "targets": [{"expr": "sum(rate(order_service_http_requests_total[1m]))", "legendFormat": "", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": None}, {"color": "yellow", "value": 50}, {"color": "red", "value": 100}]}, "unit": "reqps"}}
+    },
+    {
+      "title": "Error Rate %", "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
+      "targets": [{"expr": "sum(rate(order_service_http_requests_total{status_code=~\"5..\"}[1m])) / sum(rate(order_service_http_requests_total[1m])) * 100", "legendFormat": "", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": None}, {"color": "yellow", "value": 2}, {"color": "red", "value": 5}]}, "unit": "percent", "min": 0, "max": 100}}
+    },
+    {
+      "title": "p99 Latency", "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 1},
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(order_service_http_request_duration_seconds_bucket[1m])) by (le))", "legendFormat": "", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": None}, {"color": "yellow", "value": 0.15}, {"color": "red", "value": 0.3}]}, "unit": "s"}}
+    },
+    {
+      "title": "Active Requests", "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 1},
+      "targets": [{"expr": "order_service_http_active_requests + inventory_service_http_active_requests", "legendFormat": "", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "blue", "value": None}]}}}
+    },
+    {
+      "title": "Total Revenue", "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 1},
+      "targets": [{"expr": "sum(order_service_revenue_dollars_total)", "legendFormat": "", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": None}]}, "unit": "currencyUSD"}}
+    },
+    {
+      "title": "Total Items Sold", "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 1},
+      "targets": [{"expr": "sum(order_service_items_sold_total)", "legendFormat": "", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "purple", "value": None}]}}}
+    },
+
+    # ═══════ ROW 2: Order Service RED ═══════
+    {"title": "Order Service — RED Metrics", "type": "row", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5}, "collapsed": False, "panels": []},
+    {
+      "title": "Request Rate by Status Code", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 6},
+      "targets": [{"expr": "sum by (status_code) (rate(order_service_http_requests_total[1m]))", "legendFormat": "{{status_code}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 20, "lineWidth": 2}}}
+    },
+    {
+      "title": "Latency Distribution (p50 / p90 / p99)", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 6},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(order_service_http_request_duration_seconds_bucket[1m])) by (le))", "legendFormat": "p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.90, sum(rate(order_service_http_request_duration_seconds_bucket[1m])) by (le))", "legendFormat": "p90", "refId": "B"},
+        {"expr": "histogram_quantile(0.99, sum(rate(order_service_http_request_duration_seconds_bucket[1m])) by (le))", "legendFormat": "p99", "refId": "C"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 10, "lineWidth": 2}}}
+    },
+    {
+      "title": "Error Rate % (SLO Target: 99%)", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 6},
+      "targets": [
+        {"expr": "sum(rate(order_service_http_requests_total{status_code=~\"5..\"}[1m])) / sum(rate(order_service_http_requests_total[1m])) * 100", "legendFormat": "Error %", "refId": "A"},
+        {"expr": "1", "legendFormat": "SLO Threshold (1%)", "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent", "custom": {"fillOpacity": 15, "lineWidth": 2}}}
+    },
+
+    # ═══════ ROW 3: Business Metrics ═══════
+    {"title": "Business Metrics", "type": "row", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14}, "collapsed": False, "panels": []},
+    {
+      "title": "Orders by Product (Stacked)", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 15},
+      "targets": [{"expr": "sum by (product_id) (rate(order_service_orders_processed_total{status=\"success\"}[1m]))", "legendFormat": "{{product_id}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 30, "lineWidth": 1, "stacking": {"mode": "normal"}}}}
+    },
+    {
+      "title": "Revenue Rate by Product ($/min)", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 15},
+      "targets": [{"expr": "sum by (product_id) (rate(order_service_revenue_dollars_total[1m])) * 60", "legendFormat": "{{product_id}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "custom": {"fillOpacity": 30, "lineWidth": 1, "stacking": {"mode": "normal"}}}}
+    },
+    {
+      "title": "Order Value Distribution (avg $)", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 15},
+      "targets": [
+        {"expr": "rate(order_service_order_value_dollars_sum[1m]) / rate(order_service_order_value_dollars_count[1m])", "legendFormat": "Avg Order Value", "refId": "A"},
+        {"expr": "histogram_quantile(0.90, sum(rate(order_service_order_value_dollars_bucket[1m])) by (le))", "legendFormat": "p90 Order Value", "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "custom": {"fillOpacity": 15, "lineWidth": 2}}}
+    },
+
+    # ═══════ ROW 4: Inventory Service ═══════
+    {"title": "Inventory Service", "type": "row", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23}, "collapsed": False, "panels": []},
+    {
+      "title": "Stock Levels by Product", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 24},
+      "targets": [{"expr": "inventory_service_stock_level", "legendFormat": "{{product_id}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 10, "lineWidth": 2}}}
+    },
+    {
+      "title": "Out-of-Stock Events by Product", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 24},
+      "targets": [{"expr": "sum by (product_id) (rate(inventory_service_stock_empty_total[1m]))", "legendFormat": "{{product_id}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 20, "lineWidth": 2, "drawStyle": "bars"}}}
+    },
+    {
+      "title": "Inventory Lookup Latency (p99)", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 24},
+      "targets": [{"expr": "histogram_quantile(0.99, sum by (product_id, le) (rate(inventory_service_lookup_duration_seconds_bucket[1m])))", "legendFormat": "{{product_id}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 10, "lineWidth": 2}}}
+    },
+
+    # ═══════ ROW 5: Downstream / Dependency ═══════
+    {"title": "Downstream Dependencies", "type": "row", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 32}, "collapsed": False, "panels": []},
+    {
+      "title": "Inventory Call Latency from Order Service", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 33},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(order_service_inventory_call_duration_seconds_bucket[1m])) by (le))", "legendFormat": "p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.99, sum(rate(order_service_inventory_call_duration_seconds_bucket[1m])) by (le))", "legendFormat": "p99", "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 15, "lineWidth": 2}}}
+    },
+    {
+      "title": "Inventory Call Error Rate", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 33},
+      "targets": [{"expr": "rate(order_service_inventory_call_errors_total[1m])", "legendFormat": "Errors / sec", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 20, "lineWidth": 2}, "color": {"fixedColor": "red", "mode": "fixed"}}}
+    },
+    {
+      "title": "Request Payload Size (bytes)", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 33},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(order_service_request_payload_bytes_bucket[1m])) by (le))", "legendFormat": "p50 bytes", "refId": "A"},
+        {"expr": "histogram_quantile(0.99, sum(rate(order_service_request_payload_bytes_bucket[1m])) by (le))", "legendFormat": "p99 bytes", "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"fillOpacity": 10, "lineWidth": 2}}}
+    },
+
+    # ═══════ ROW 6: System / Runtime ═══════
+    {"title": "System / Runtime", "type": "row", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 41}, "collapsed": False, "panels": []},
+    {
+      "title": "Goroutines", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 42},
+      "targets": [{"expr": "go_goroutines{job=~\"order-service|inventory-service\"}", "legendFormat": "{{job}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 15, "lineWidth": 2}}}
+    },
+    {
+      "title": "Heap Memory (Alloc)", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 42},
+      "targets": [{"expr": "go_memstats_alloc_bytes{job=~\"order-service|inventory-service\"}", "legendFormat": "{{job}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"fillOpacity": 15, "lineWidth": 2}}}
+    },
+    {
+      "title": "GC Pause Duration", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 42},
+      "targets": [{"expr": "rate(go_gc_duration_seconds_sum{job=~\"order-service|inventory-service\"}[1m])", "legendFormat": "{{job}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 15, "lineWidth": 2}}}
+    },
+    {
+      "title": "Open File Descriptors", "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 42},
+      "targets": [{"expr": "process_open_fds{job=~\"order-service|inventory-service\"}", "legendFormat": "{{job}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"fillOpacity": 15, "lineWidth": 2}}}
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["sre", "microservices", "production"],
+  "templating": {"list": []},
+  "time": {"from": "now-5m", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "SRE Microservices Dashboard",
+  "uid": "sre-dashboard",
+  "version": 3
+}
+
+os.makedirs('d:/Downloads/8th Sem/sre-project/infra/dashboards', exist_ok=True)
+with open('d:/Downloads/8th Sem/sre-project/infra/dashboards/sre-dashboard.json', 'w') as f:
+    json.dump(dashboard, f, indent=2)
+print("Dashboard generated with", len([p for p in dashboard["panels"] if p["type"] != "row"]), "data panels.")

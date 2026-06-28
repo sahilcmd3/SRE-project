@@ -1,0 +1,90 @@
+services:
+  order-service:
+    build:
+      context: ./order-service
+    ports:
+      - "8080:8080"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+      - INVENTORY_SERVICE_URL=http://inventory-service:8081
+    depends_on:
+      - otel-collector
+      - inventory-service
+    logging:
+      driver: "json-file"
+      options:
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.DaemonName}}"
+
+  inventory-service:
+    build:
+      context: ./inventory-service
+    ports:
+      - "8081:8081"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+    depends_on:
+      - otel-collector
+    logging:
+      driver: "json-file"
+      options:
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.DaemonName}}"
+
+  traffic-generator:
+    build:
+      context: ./traffic-generator
+    environment:
+      - ORDER_SERVICE_URL=http://order-service:8080
+    depends_on:
+      - order-service
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.103.0
+    command: [ "--config=/etc/otel-collector-config.yml" ]
+    volumes:
+      - ./infra/otel-collector-config.yml:/etc/otel-collector-config.yml
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+      - "8889:8889" # Prometheus metrics
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    volumes:
+      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686" # Web UI
+      - "4317" # OTLP gRPC receiver
+
+  loki:
+    image: grafana/loki:3.0.0
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./infra/promtail-config.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    volumes:
+      - ./infra/grafana-datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+      - ./infra/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./infra/dashboards:/var/lib/grafana/dashboards
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - jaeger

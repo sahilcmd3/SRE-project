@@ -1,0 +1,46 @@
+# --- Loki Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki
+  namespace: sre-project
+  labels:
+    app: loki
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loki
+  template:
+    metadata:
+      labels:
+        app: loki
+    spec:
+      containers:
+      - name: loki
+        image: grafana/loki:3.0.0
+        args: ["-config.file=/etc/loki/local-config.yaml"]
+        ports:
+        - containerPort: 3100
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+---
+# --- Loki Service ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+  namespace: sre-project
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3100
+    targetPort: 3100
+    name: http
+  selector:
+    app: loki
